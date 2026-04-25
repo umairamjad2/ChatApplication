@@ -79,7 +79,7 @@ app.use("/api/messages", messageRouter);
 
 
 // Connect to MongoDB
-await connectDB();
+// await connectDB();
 
 // Start server
 // const PORT = process.env.PORT || 5000;
@@ -87,8 +87,20 @@ await connectDB();
 //   console.log(`Server running on http://localhost:${PORT}`);
 // });
 
-const PORT = process.env.PORT || 5000;
 
-server.listen(PORT, "0.0.0.0", () => {
-  console.log(`Server running on port ${PORT}`);
-});
+
+
+
+
+
+const startServer = async () => {
+  await connectDB();
+
+  const PORT = process.env.PORT || 5000;
+
+  server.listen(PORT, "0.0.0.0", () => {
+    console.log(`Server running on port ${PORT}`);
+  });
+};
+
+startServer();
