@@ -87,12 +87,6 @@ app.use("/api/messages", messageRouter);
 //   console.log(`Server running on http://localhost:${PORT}`);
 // });
 
-
-
-
-
-
-
 const startServer = async () => {
   await connectDB();
 
