@@ -46,6 +46,7 @@ export const getMessages = async (req, res) => {
         { senderId: myId, receiverId: selectedUserId },
         { senderId: selectedUserId, receiverId: myId },
       ],
+      deletedFor: { $ne: myId },
     })
     // await Message.updateMany(
     //   { senderId: selectedUserId, receiverId: myId, seen: true },
@@ -148,8 +149,89 @@ export const sendMessage = async (req, res) => {
     });
   }
 };
+// Delete message
+export const deleteMessage = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { delete_for_everyone } = req.body;
+    const myId = req.user._id;
 
+    const message = await Message.findById(id);
+    if (!message) {
+      return res.status(404).json({
+        success: false,
+        message: "Message not found",
+      });
+    }
 
+    if (delete_for_everyone) {
+      // Only sender can delete for everyone
+      if (message.senderId.toString() !== myId.toString()) {
+        return res.status(403).json({
+          success: false,
+          message: "You can only delete your own messages for everyone",
+        });
+      }
 
+      message.isDeleted = true;
+      message.text = "";
+      message.image = "";
+      await message.save();
 
+      // Notify the other user
+      const otherUserId = message.receiverId.toString() === myId.toString() ? message.senderId : message.receiverId;
+      const otherUserSocketId = userSocketMap[otherUserId];
+      if (otherUserSocketId) {
+        io.to(otherUserSocketId).emit("messageDeleted", {
+          messageId: id,
+        });
+      }
+    } else {
+      // Delete for me
+      if (!message.deletedFor.includes(myId)) {
+        message.deletedFor.push(myId);
+        await message.save();
+      }
+    }
 
+    res.status(200).json({
+      success: true,
+      message: "Message deleted successfully",
+    });
+  } catch (error) {
+    console.log("Delete Message Error:", error.message);
+    res.status(500).json({
+      success: false,
+      message: error.message,
+    });
+  }
+};
+// Clear all messages in a chat
+export const clearChat = async (req, res) => {
+  try {
+    const { id: selectedUserId } = req.params;
+    const myId = req.user._id;
+
+    await Message.updateMany(
+      {
+        $or: [
+          { senderId: myId, receiverId: selectedUserId },
+          { senderId: selectedUserId, receiverId: myId },
+        ],
+        deletedFor: { $ne: myId },
+      },
+      { $addToSet: { deletedFor: myId } }
+    );
+
+    res.status(200).json({
+      success: true,
+      message: "Chat cleared successfully",
+    });
+  } catch (error) {
+    console.log("Clear Chat Error:", error.message);
+    res.status(500).json({
+      success: false,
+      message: error.message,
+    });
+  }
+};
