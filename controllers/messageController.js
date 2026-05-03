@@ -1,3 +1,4 @@
+import mongoose from "mongoose";
 import Message from "../models/message.js";
 import User from "../models/User.js";
 import cloudinary from "../lib/cloudinary.js";
@@ -212,7 +213,15 @@ export const clearChat = async (req, res) => {
     const { id: selectedUserId } = req.params;
     const myId = req.user._id;
 
-    await Message.updateMany(
+    if (!mongoose.Types.ObjectId.isValid(selectedUserId)) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid selected user ID",
+      });
+    }
+
+    // Find all messages between these two users that aren't already hidden for current user
+    const result = await Message.updateMany(
       {
         $or: [
           { senderId: myId, receiverId: selectedUserId },
@@ -226,12 +235,13 @@ export const clearChat = async (req, res) => {
     res.status(200).json({
       success: true,
       message: "Chat cleared successfully",
+      count: result.modifiedCount,
     });
   } catch (error) {
     console.log("Clear Chat Error:", error.message);
     res.status(500).json({
       success: false,
-      message: error.message,
+      message: "Internal Server Error",
     });
   }
 };
