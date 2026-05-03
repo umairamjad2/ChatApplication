@@ -71,7 +71,7 @@ app.get("/", (req, res) => {
 });
 
 app.use("/api/status", (req, res) => {
-  res.send('Server is Alive!')
+  res.send('Server is Alive NEW VERSION 🔥!')
 });
 
 app.use("/api/auth", userRouter);
