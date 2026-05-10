@@ -6,8 +6,29 @@ import connectDB from "./lib/db.js";
 import userRouter from "./routes/userRoutes.js";
 import messageRouter from "./routes/messageRoutes.js";
 import { Server } from "socket.io";
+import { askAIStream } from "./services/aiService.js";
+import User from "./models/User.js";
+import Message from "./models/message.js";
 
 
+const AI_USER_ID = "000000000000000000000001";
+
+const createAIUserIfNotExists = async () => {
+  const exists = await User.findById(AI_USER_ID);
+
+  if (!exists) {
+    await User.create({
+      _id: AI_USER_ID,
+      email: "ai@chat.com",
+      fullName: "AI Assistant",
+      password: "dummy123",
+      profilePic: "",
+      bio: "I am your AI assistant"
+    });
+
+    console.log("🤖 AI user created");
+  }
+};
 //Express app and HTTP server
 const app = express();
 const server = http.createServer(app);
@@ -37,6 +58,91 @@ io.on("connection", (socket) => {
 
   // ✅ Emit online users
   io.emit("getOnlineUsers", Object.keys(userSocketMap));
+
+
+  // ==============================
+  // 🔥 AI CHAT ADD HERE
+  // ==============================
+  socket.on("sendMessage", async (data) => {
+    const { message, receiverId } = data;
+
+    if (!message || !receiverId) return;
+    if (userId === AI_USER_ID) return;
+
+    if (receiverId === AI_USER_ID) {
+      try {
+        socket.emit("typing", true);
+
+        // 1. Get last messages (memory)
+        let messages = await Message.find({
+          $or: [
+            { senderId: userId, receiverId: AI_USER_ID },
+            { senderId: AI_USER_ID, receiverId: userId }
+          ]
+        })
+          .sort({ createdAt: -1 })
+          .limit(10)
+          .lean();
+
+        messages = messages.reverse(); // chronological order
+
+        // 2. Format memory
+        const formattedMessages = messages.map((msg) => ({
+          role:
+            msg.senderId.toString() === AI_USER_ID ? "assistant" : "user",
+          content: msg.text
+        }));
+
+        formattedMessages.push({
+          role: "user",
+          content: message
+        });
+
+        let streamedText = "";
+
+        // 3. Streaming AI
+        await askAIStream(formattedMessages, (chunk, fullText) => {
+          streamedText = fullText;
+
+          socket.emit("receiveMessage", {
+            senderId: AI_USER_ID,
+            receiverId: userId,
+            text: streamedText,
+            isStreaming: true
+          });
+        });
+
+        socket.emit("typing", false);
+
+        // 4. Save final message
+        await Message.create({
+          senderId: AI_USER_ID,
+          receiverId: userId,
+          text: streamedText
+        });
+
+        // 5. Final stop signal
+        socket.emit("receiveMessage", {
+          senderId: AI_USER_ID,
+          receiverId: userId,
+          text: streamedText,
+          isStreaming: false
+        });
+
+      } catch (err) {
+        console.log("AI Error:", err);
+
+        socket.emit("typing", false);
+
+        socket.emit("receiveMessage", {
+          senderId: AI_USER_ID,
+          receiverId: userId,
+          text: "AI is currently unavailable",
+          isStreaming: false
+        });
+      }
+    }
+  });
 
   socket.on("disconnect", () => {
     console.log("User Disconnected", userId);
@@ -71,7 +177,7 @@ app.get("/", (req, res) => {
 });
 
 app.use("/api/status", (req, res) => {
-  res.send('Server is Alive NEW VERSION 🔥!')
+  res.send('Server is Alive!')
 });
 
 app.use("/api/auth", userRouter);
@@ -89,6 +195,7 @@ app.use("/api/messages", messageRouter);
 
 const startServer = async () => {
   await connectDB();
+  await createAIUserIfNotExists();
 
   const PORT = process.env.PORT || 5000;
 
